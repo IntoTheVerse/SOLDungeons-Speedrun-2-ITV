@@ -1,22 +1,29 @@
-using System.Collections;
 using System.Collections.Generic;
-using DapperLabs.Flow.Sdk;
-using DapperLabs.Flow.Sdk.Cadence;
 using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
-using SimpleJSON;
+using Solana.Unity.SDK;
+using Solana.Unity.Wallet;
+using Solana.Unity.Programs;
+using Solana.Unity.Rpc.Models;
+using Solana.Unity.Rpc.Core.Http;
+using Solana.Unity.Soar.Program;
+using Solana.Unity.Rpc.Types;
+using Cysharp.Threading.Tasks;
+using SolDungeons.Program;
+using SolDungeons;
 
+[System.Serializable]
 public struct NFTMetadatas
 {
-    public Dictionary<System.UInt64, string> charactersMetadata;
-    public Dictionary<System.UInt64, string> weaponsMetadata;
+    public NFTDatas[] charactersMetadata;
+    public NFTDatas[] weaponsMetadata;
 }
 
 public struct OwnedNFTIds
 {
-    public List<System.UInt64> ownedCharactersId;
-    public List<System.UInt64> ownedWeaponsId;
+    public List<string> ownedCharactersId;
+    public List<string> ownedWeaponsId;
 }
 
 public class MainMenuUI : MonoBehaviour
@@ -50,8 +57,6 @@ public class MainMenuUI : MonoBehaviour
     [SerializeField] private NFT nftPrefab;
     [SerializeField] private Transform characterNftSpawn;
     [SerializeField] private Transform weaponNftSpawn;
-    [SerializeField] private Sprite[] characterSprites;
-    [SerializeField] private Sprite[] weaponSprites;
 
     private void Start()
     {
@@ -67,202 +72,195 @@ public class MainMenuUI : MonoBehaviour
         SceneManager.LoadScene("MainGameScene");
     }
 
+    public void OnEnable()
+    {
+        Web3.OnLogin += OnLogin;
+        Web3.OnLogout += OnLogout;
+    }
+
+    public void OnDisable()
+    {
+        Web3.OnLogin += OnLogin;
+        Web3.OnLogout += OnLogout;
+    }
+
+    private void OnLogout()
+    {
+        
+    }
+
+    private async void OnLogin(Account account)
+    {
+        await WalletManager.instance.GetPDAs();
+        SetupPlayer();
+    }
+
     /// <summary>
     /// Sign in using WalletConnect
     /// </summary>
     public async void SignIn()
     {
         await WalletManager.instance.AuthenticateWithWallet();
-        await WalletManager.instance.SetFlowAccout();
-
-        if(FlowSDK.GetWalletProvider().IsAuthenticated())
-            StartCoroutine(SetupPlayer());
     }
 
     /// <summary>
     /// Checks if the User is a new User
     /// </summary>
-    private IEnumerator SetupPlayer()
+    private async void SetupPlayer()
     {
-        HighScoreManager.Instance.Refresh();
-        var scpRespone = WalletManager.instance.scriptsExecutionAccount.ExecuteScript(
-            Cadence.instance.getUserName.text, 
-            Convert.ToCadence(WalletManager.instance.flowAccount.Address, "Address")
-        );
-        yield return new WaitUntil(() => scpRespone.IsCompleted);
-        var scpResult = scpRespone.Result;
-        if (scpResult.Error != null)
-        {
-            var txResponse = Transactions.SubmitAndWaitUntilSealed
-            (
-                Cadence.instance.createNewUser.text
-            );
-            InfoDisplay.Instance.ShowInfo("Sign Transaction", "Please sign the account creation trasaction from your wallet!");
-            yield return new WaitUntil(() => txResponse.IsCompleted);
-            InfoDisplay.Instance.HideInfo();
-            var txResult = txResponse.Result;
-
-            if (txResult.Error != null)
-            {
-                Cadence.instance.DebugFlowErrors(txResult.Error);
-                FlowSDK.GetWalletProvider().Unauthenticate();
-                yield break;
-            }
-            else
-            {
-                Debug.Log($"Transaction Completion Code: {txResult.StatusCode}");
-                StartCoroutine(SetupPlayer());
-                yield break;
-            }
-        }
+        if (!await WalletManager.instance.IsPdaInitialized(WalletManager.instance.playerPDA)) OnSetupNewAccount();
         else
         {
-            StartCoroutine(GetTokenBalance());
+            var client = new SolDungeonsClient(Web3.Rpc, Web3.WsRpc, WalletManager.instance.programId);
+            var res = await client.GetUserAsync(WalletManager.instance.playerPDA);
+            WalletManager.instance.user = res.ParsedResult;
+            HighScoreManager.Instance.Refresh();
             userDunBalance.gameObject.SetActive(true);
-            FindObjectOfType<CharacterSelectorUI>().UpdateNameFromWeb3(Convert.FromCadence<string>(scpResult.Value));
-            userPublicKey.text = $"Public Key: 0x{WalletManager.instance.flowAccount.Address}";
+            FindObjectOfType<CharacterSelectorUI>().UpdateNameFromWeb3(WalletManager.instance.user.Username);
+            userPublicKey.text = $"Public Key: {Web3.Account.PublicKey}";
             signInButton.SetActive(false);
             highScoresButton.SetActive(true);
             playButton.SetActive(true);
+            GetTokenBalance();
         }
     }
 
-    private IEnumerator GetTokenBalance()
+    private async void OnSetupNewAccount()
     {
-        var scpTokenRespone = WalletManager.instance.scriptsExecutionAccount.ExecuteScript(
-        Cadence.instance.getTokenBalance.text,
-        Convert.ToCadence(WalletManager.instance.flowAccount.Address, "Address")
+        string username = $"User{Random.Range(0, 100000)}";
+
+        var tx = new Transaction()
+        {
+            FeePayer = Web3.Account,
+            Instructions = new List<TransactionInstruction>(),
+            RecentBlockHash = (await WalletManager.instance.rpcClient.GetLatestBlockHashAsync()).Result.Value.Blockhash
+        };
+
+        var dunRes = await Web3.Rpc.GetAccountInfoAsync(AssociatedTokenAccountProgram.DeriveAssociatedTokenAccount(Web3.Account.PublicKey, WalletManager.instance.dunMint));
+        if (!dunRes.WasSuccessful || dunRes.Result?.Value == null)
+        {
+            TransactionInstruction createDunATAIx = AssociatedTokenAccountProgram.CreateAssociatedTokenAccount(Web3.Account.PublicKey, Web3.Account.PublicKey, WalletManager.instance.dunMint);
+            tx.Add(createDunATAIx);
+        }
+
+        var accountsInitUser = new InitializePlayerAccounts()
+        {
+            Payer = Web3.Account,
+            User = Web3.Account,
+            PlayerAccount = WalletManager.instance.playerSoarPDA,
+            SystemProgram = SystemProgram.ProgramIdKey
+        };
+
+        var initPlayerIx = SoarProgram.InitializePlayer(
+            accounts: accountsInitUser,
+            username: username,
+            nftMeta: Web3.Account.PublicKey,
+            SoarProgram.ProgramIdKey
         );
-        yield return new WaitUntil(() => scpTokenRespone.IsCompleted);
-        var scpTokenResult = scpTokenRespone.Result;
-        if (scpTokenResult.Error != null)
+
+        tx.Add(initPlayerIx);
+
+        var userAccounts = new InitializeUserAccounts()
         {
-            var txResponse = Transactions.SubmitAndWaitUntilSealed
-            (
-                Cadence.instance.createTokenVault.text
-            );
-            InfoDisplay.Instance.ShowInfo("Sign Transaction", "Please sign the token account creation trasaction from your wallet!");
-            yield return new WaitUntil(() => txResponse.IsCompleted);
-            InfoDisplay.Instance.HideInfo();
-            var txResult = txResponse.Result;
-            if (txResult.Error != null)
-            {
-                userDunBalance.gameObject.SetActive(false);
-                Cadence.instance.DebugFlowErrors(txResult.Error);
-                FlowSDK.GetWalletProvider().Unauthenticate();
-                yield break;
-            }
-            else
-            {
-                Debug.Log($"Transaction Completion Code: {txResult.StatusCode}");
-                StartCoroutine(GetTokenBalance());
-                yield break;
-            }
-        }
-        else
-        {
-            WalletManager.instance.DunTokenBalance = (int)Convert.FromCadence<decimal>(scpTokenResult.Value);
-            userDunBalance.text = $"$DUN: {(int)Convert.FromCadence<decimal>(scpTokenResult.Value)}";
-            StartCoroutine(GetNFTData());
-        }
+            Signer = Web3.Account,
+            User = WalletManager.instance.playerPDA,
+            SystemProgram = SystemProgram.ProgramIdKey
+        };
+
+        var userIx = SolDungeonsProgram.InitializeUser(
+            accounts: userAccounts,
+            username: username,
+            WalletManager.instance.programId
+        );
+
+        tx.Add(userIx);
+
+        RequestResult<string> resTx = await Web3.Wallet.SignAndSendTransaction(tx, commitment: Commitment.Finalized);
+        Debug.Log($"Result: {Newtonsoft.Json.JsonConvert.SerializeObject(resTx)}");
+
+        await WalletManager.instance.RecieveToken(WalletManager.instance.metadatas.charactersMetadata[0].publicKey, 1);
+        await WalletManager.instance.RecieveToken(WalletManager.instance.metadatas.weaponsMetadata[0].publicKey, 1);
+        SetupPlayer();
     }
 
-    private IEnumerator GetNFTData()
+    private async void GetTokenBalance()
     {
-        InfoDisplay.Instance.ShowInfo("Info", "Fetching NFTs");
-        var characterIdRespone = WalletManager.instance.scriptsExecutionAccount.ExecuteScript(
-        Cadence.instance.getOwnedNftIds.text,
-        Convert.ToCadence(WalletManager.instance.flowAccount.Address, "Address")
-        );
-        yield return new WaitUntil(() => characterIdRespone.IsCompleted);
-        var characterIdResult = characterIdRespone.Result;
-        if (characterIdResult.Error != null)
+        var tokens = await Web3.Rpc.GetTokenAccountsByOwnerAsync(Web3.Account.PublicKey, tokenProgramId: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+        foreach (TokenAccount account in tokens.Result?.Value)
         {
-            var txResponse = Transactions.SubmitAndWaitUntilSealed
-            (
-                Cadence.instance.setupNftCollections.text,
-                Convert.ToCadence((System.UInt64)1, "UInt64")
-            );
-            InfoDisplay.Instance.ShowInfo("Sign Transaction", "Please sign the NFT collection creation trasaction from your wallet!");
-            yield return new WaitUntil(() => txResponse.IsCompleted);
-            InfoDisplay.Instance.HideInfo();
-            var txResult = txResponse.Result;
-            if (txResult.Error != null)
+            if (account.Account.Data.Parsed.Info.Mint == WalletManager.instance.dunMint)
+                UpdateUserDunBalance((int)account.Account.Data.Parsed.Info.TokenAmount.AmountDecimal);
+        }
+
+        GetNFTData();
+    }
+
+    private async void GetNFTData()
+    {
+        InfoDisplay.Instance.ShowInfo("Processing", "Fetching NFTs!");
+        var tokens = await Web3.Rpc.GetTokenAccountsByOwnerAsync(Web3.Account.PublicKey, tokenProgramId: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+        OwnedNFTIds ownedNftIds = new()
+        {
+            ownedCharactersId = new(),
+            ownedWeaponsId = new()
+        };
+        for (int i = 0; i < WalletManager.instance.metadatas.charactersMetadata.Length; i++)
+        {
+            foreach (TokenAccount account in tokens.Result?.Value)
             {
-                userDunBalance.gameObject.SetActive(false);
-                Cadence.instance.DebugFlowErrors(txResult.Error);
-                FlowSDK.GetWalletProvider().Unauthenticate();
-                yield break;
-            }
-            else
-            {
-                Debug.Log($"Transaction Completion Code: {txResult.StatusCode}");
-                StartCoroutine(GetNFTData());
-                yield break;
+                if (account.Account.Data.Parsed.Info.Mint == WalletManager.instance.metadatas.charactersMetadata[i].publicKey) 
+                    ownedNftIds.ownedCharactersId.Add(WalletManager.instance.metadatas.charactersMetadata[i].publicKey);
             }
         }
-        else
+
+        for (int i = 0; i < WalletManager.instance.metadatas.weaponsMetadata.Length; i++)
         {
-            InfoDisplay.Instance.ShowInfo("Info", "Fetching NFTs");
-            OwnedNFTIds ownedNftIds = Convert.FromCadence<OwnedNFTIds>(characterIdResult.Value);
-            ownedNftIds.ownedCharactersId.Add(1);
-            ownedNftIds.ownedWeaponsId.Add(1);
-            WalletManager.instance.ownedNFTIds = ownedNftIds;
-
-            var scpTokenRespone = WalletManager.instance.scriptsExecutionAccount.ExecuteScript(
-                Cadence.instance.getAllMetadatas.text
-            );
-            yield return new WaitUntil(() => scpTokenRespone.IsCompleted);
-            var scpTokenResult = scpTokenRespone.Result;
-            if (scpTokenResult.Error != null)
+            foreach (TokenAccount account in tokens.Result?.Value)
             {
-                Cadence.instance.DebugFlowErrors(scpTokenResult.Error);
-                FlowSDK.GetWalletProvider().Unauthenticate();
-                yield break;
-            }
-            else
-            {
-                NFTMetadatas metadatas = Convert.FromCadence<NFTMetadatas>(scpTokenResult.Value);
-                WalletManager.instance.metadatas = metadatas;
-
-                foreach (Transform item in characterNftSpawn)
-                {
-                    Destroy(item.gameObject);
-                }
-
-                foreach (Transform item in weaponNftSpawn)
-                {
-                    Destroy(item.gameObject);
-                }
-
-                for (int i = 0; i < metadatas.charactersMetadata.Count; i++)
-                {
-                    JSONNode node = JSON.Parse(metadatas.charactersMetadata[(ulong)i + 1]);
-                    Instantiate(nftPrefab, characterNftSpawn).SetupNFT(
-                        node["Name"], 
-                        node["Description"], 
-                        node["Price"], 
-                        characterSprites[i], 
-                        ownedNftIds.ownedCharactersId.Contains((ulong)i + 1), 
-                        0, 
-                        (int)(i + 1));
-                }
-
-                for (int i = 0; i < metadatas.weaponsMetadata.Count; i++)
-                {
-                    JSONNode node = JSON.Parse(metadatas.weaponsMetadata[(ulong)i + 1]);
-                    Instantiate(nftPrefab, weaponNftSpawn).SetupNFT(
-                        node["Name"],
-                        node["Description"],
-                        node["Price"],
-                        weaponSprites[i],
-                        ownedNftIds.ownedWeaponsId.Contains((ulong)i + 1),
-                        1,
-                        (int)(i + 1));
-                }
-                marketplaceButton.gameObject.SetActive(true);
+                if (account.Account.Data.Parsed.Info.Mint == WalletManager.instance.metadatas.weaponsMetadata[i].publicKey)
+                    ownedNftIds.ownedWeaponsId.Add(WalletManager.instance.metadatas.weaponsMetadata[i].publicKey);
             }
         }
+
+        WalletManager.instance.ownedNFTIds = ownedNftIds;
+
+        foreach (Transform item in characterNftSpawn)
+        {
+            Destroy(item.gameObject);
+        }
+
+        foreach (Transform item in weaponNftSpawn)
+        {
+            Destroy(item.gameObject);
+        }
+
+        for (int i = 0; i < WalletManager.instance.metadatas.charactersMetadata.Length; i++)
+        {
+            NFTDatas data = WalletManager.instance.metadatas.charactersMetadata[i];
+            Instantiate(nftPrefab, characterNftSpawn).SetupNFT(
+                data.name, 
+                data.description, 
+                data.price, 
+                data.sprite, 
+                ownedNftIds.ownedCharactersId.Contains(data.publicKey), 
+                0, 
+                data.publicKey);
+        }
+
+        for (int i = 0; i < WalletManager.instance.metadatas.weaponsMetadata.Length; i++)
+        {
+            NFTDatas data = WalletManager.instance.metadatas.weaponsMetadata[i];
+            Instantiate(nftPrefab, weaponNftSpawn).SetupNFT(
+                data.name,
+                data.description,
+                data.price,
+                data.sprite,
+                ownedNftIds.ownedWeaponsId.Contains(data.publicKey),
+                1,
+                data.publicKey);
+        }
+
+        marketplaceButton.gameObject.SetActive(true);
         InfoDisplay.Instance.HideInfo();
     }
 
@@ -300,7 +298,7 @@ public class MainMenuUI : MonoBehaviour
         HighScorePanel.SetActive(false);
         instructionsButton.SetActive(true);
 
-        if (FlowSDK.GetWalletProvider().IsAuthenticated())
+        if (WalletManager.instance.playerPDA != null)
         {
             playButton.SetActive(true);
             highScoresButton.SetActive(true);
@@ -310,7 +308,6 @@ public class MainMenuUI : MonoBehaviour
         { 
             signInButton.SetActive(true);
         }
-
     }
 
     /// <summary>

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -18,7 +19,7 @@ public class DisplayHighScoresUI : MonoBehaviour
         RefreshButton.onClick.AddListener(() => FindAnyObjectByType<HighScoreManager>().Refresh());
     }
 
-    public void DisplayScores(HighScores highScores)
+    public void DisplayScores(List<Score> highScores)
     {
         for (int i = 1; i < contentAnchorTransform.childCount; i++)
         {
@@ -26,7 +27,7 @@ public class DisplayHighScoresUI : MonoBehaviour
         }
 
         int rank = 0;
-        foreach (Score score in highScores.scoreList)
+        foreach (Score score in highScores)
         {
             rank++;
 
@@ -40,9 +41,8 @@ public class DisplayHighScoresUI : MonoBehaviour
             else scorePrefab.rankTMP.color = Color.grey;
 
             scorePrefab.rankTMP.text = rank.ToString();
-            scorePrefab.nameTMP.text = score.playerName;
-            scorePrefab.levelTMP.text = score.levelDescription;
-            scorePrefab.scoreTMP.text = score.playerScore.ToString();
+            scorePrefab.nameTMP.text = score.username;
+            scorePrefab.scoreTMP.text = score.score.ToString();
         }
     }
 }

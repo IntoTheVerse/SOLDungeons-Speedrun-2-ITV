@@ -10,7 +10,7 @@ public class WeaponDetailsSO : ScriptableObject
     #region Tooltip
     [Tooltip("Weapon name")]
     #endregion Tooltip
-    public System.UInt64 weaponId;
+    public string weaponId;
     public string weaponName;
     #region Tooltip
     [Tooltip("The sprite for the weapon - the sprite should have the 'generate physics shape' option selected ")]

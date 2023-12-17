@@ -1,19 +1,23 @@
-using System.Data;
 using UnityEngine;
 using System;
-using System.Linq;
-using GoogleSheetsToUnity;
 using System.Collections.Generic;
 using UnityEngine.SceneManagement;
+using Solana.Unity.Rpc.Models;
+using Solana.Unity.SDK;
+using Solana.Unity.Soar.Program;
+using Solana.Unity.Programs;
+using Solana.Unity.Soar;
+using Solana.Unity.Wallet;
+
+public struct Score
+{
+    public string username;
+    public ulong score;
+}
 
 public class HighScoreManager : SingletonMonobehaviour<HighScoreManager>
 {
-    private HighScores Scores = new();
-
-    private const string SPREADSHEET_PUBLIC_ID = "1e9_OIlqk9LSTHSWGa-uLL0oGUSJHAyMqkWKm8QnzOcY";
-    private const string SPREADSHEET_NAME = "WalletAddress";
-    private GstuSpreadSheet spreadSheet;
-
+    public List<Score> scores = new();
     protected override void Awake()
     {
         base.Awake();
@@ -24,14 +28,9 @@ public class HighScoreManager : SingletonMonobehaviour<HighScoreManager>
     {
         GetScores((success) => 
         {
-            if (success && Scores.scoreList.Count > 0 && SceneManager.GetActiveScene().name == "MainMenuScene")
+            if (success && scores.Count > 0 && SceneManager.GetActiveScene().name == "MainMenuScene")
             {
-                FindObjectOfType<DisplayHighScoresUI>(true).DisplayScores(Scores);
-                Score playerScore = Scores.scoreList.Find(x => x.walletAddress == WalletManager.instance.flowAccount.Address);
-                if (playerScore != null)
-                    WalletManager.instance.playerLevel = playerScore.level;
-                else
-                    WalletManager.instance.playerLevel = 0;
+                FindObjectOfType<DisplayHighScoresUI>(true).DisplayScores(scores);
             }
         });
     }
@@ -39,90 +38,86 @@ public class HighScoreManager : SingletonMonobehaviour<HighScoreManager>
     /// <summary>
     /// Add score to high scores list
     /// </summary>
-    public void AddScore(Score newScore)
+    public async void AddScore(ulong playerScore)
     {
-        if (Scores.scoreList.Exists(x => x.walletAddress == newScore.walletAddress))
+        var tx = new Transaction()
         {
-            Score oldScore = Scores.scoreList.Find(x => x.walletAddress == newScore.walletAddress);
-            if (newScore.playerScore > oldScore.playerScore)
-            {
-                GetScores((success) =>
-                {
-                    if (success)
-                    {
-                        spreadSheet[oldScore.walletAddress, "Score"].UpdateCellValue(SPREADSHEET_PUBLIC_ID, SPREADSHEET_NAME, newScore.playerScore.ToString());
-                    }
-                });
-            }
+            FeePayer = Web3.Account,
+            Instructions = new List<TransactionInstruction>(),
+            RecentBlockHash = await Web3.BlockHash()
+        };
 
-            if (oldScore.level < GameManager.Instance.currentDungeonLevelListIndex)
-                spreadSheet[oldScore.walletAddress, "LevelIndex"].UpdateCellValue(SPREADSHEET_PUBLIC_ID, SPREADSHEET_NAME, GameManager.Instance.currentDungeonLevelListIndex.ToString());
+        var game = WalletManager.instance.soarGame;
+        var leaderboard = WalletManager.instance.soarLeaderboard;
+        var playerAccount = SoarPda.PlayerPda(Web3.Account);
+        var playerScores = SoarPda.PlayerScoresPda(playerAccount, leaderboard);
 
-            if (newScore.playerName != oldScore.playerName)
-                spreadSheet[oldScore.walletAddress, "Username"].UpdateCellValue(SPREADSHEET_PUBLIC_ID, SPREADSHEET_NAME, newScore.playerName);
-        }
-        else
+        if (!await WalletManager.instance.IsPdaInitialized(playerScores))
         {
-            List<string> test = new() {};
-            List<string> newValues = new()
+            var registerPlayerAccounts = new RegisterPlayerAccounts()
             {
-                newScore.walletAddress,
-                newScore.playerName,
-                newScore.levelDescription,
-                newScore.playerScore.ToString(),
-                newScore.level.ToString()
+                Payer = Web3.Account,
+                User = Web3.Account,
+                PlayerAccount = playerAccount,
+                Game = game,
+                Leaderboard = leaderboard,
+                NewList = playerScores,
+                SystemProgram = SystemProgram.ProgramIdKey
             };
-
-            List<List<string>> combined = new()
-            {
-                test,
-                newValues,
-            };
-
-            GetScores((success) =>
-            {
-                if (success)
-                {
-                    SpreadsheetManager.Write(
-                        new GSTU_Search(SPREADSHEET_PUBLIC_ID, SPREADSHEET_NAME, $"A{spreadSheet.rows.primaryDictionary.Count}"), 
-                        new ValueRange(combined), 
-                        null
-                    );
-                }
-            });
+            var registerPlayerIx = SoarProgram.RegisterPlayer(
+                registerPlayerAccounts,
+                SoarProgram.ProgramIdKey
+            );
+            tx.Add(registerPlayerIx);
         }
+
+        Account authWallet = new("4aecpyrADpd3LNaZqmxHbaB7FEDQi89AKPqHSY6k3Kk8JSYAtZQ26rwL77c4JpMdRpESAv9KSRQrLQUG9XdCmq2i", "Ggg31TYu5hzH8x7x47W4ZXLqnEPSSqV1nF4YbJAfJyNi");
+        var addLeaderboardAccounts = new SubmitScoreAccounts()
+        {
+            Authority = authWallet.PublicKey,
+            Payer = Web3.Account,
+            PlayerAccount = playerAccount,
+            Game = game,
+            Leaderboard = leaderboard,
+            PlayerScores = playerScores,
+            TopEntries = SoarPda.LeaderboardTopEntriesPda(leaderboard),
+            SystemProgram = SystemProgram.ProgramIdKey
+        };
+
+        var submitScoreIx = SoarProgram.SubmitScore(
+            accounts: addLeaderboardAccounts,
+            score: playerScore,
+            SoarProgram.ProgramIdKey
+        );
+
+        tx.Add(submitScoreIx);
+
+        tx.PartialSign(Web3.Account);
+        tx.PartialSign(authWallet);
+
+        var res = await Web3.Wallet.SignAndSendTransaction(tx);
+        Debug.Log($"Result: {Newtonsoft.Json.JsonConvert.SerializeObject(res)}");
     }
 
-    private void GetScores(Action<bool> result)
+    private async void GetScores(Action<bool> result)
     {
-        SpreadsheetManager.ReadPublicSpreadsheet(new GSTU_Search(SPREADSHEET_PUBLIC_ID, SPREADSHEET_NAME), (sheet) =>
+        scores = new();
+        var client = new SoarClient(Web3.Rpc, Web3.WsRpc);
+        var topEntries = await client.GetLeaderTopEntriesAsync(WalletManager.instance.soarTopEntries);
+        for (int i = 0; i < topEntries.ParsedResult.TopScores.Length; i++)
         {
-            if (sheet == null)
+            if (topEntries.ParsedResult.TopScores[i].Player != "11111111111111111111111111111111")
             {
-                result(false);
-                Debug.LogError("Couldn't Load Sheets!");
-            }
-            else 
-            {
-                spreadSheet = sheet;
-                Scores.scoreList.Clear();
-
-                for (int i = 1; i < sheet.rows.primaryDictionary.Count; i++)
+                Debug.Log(topEntries.ParsedResult.TopScores[i].Player);
+                string username = (await client.GetPlayerAsync(topEntries.ParsedResult.TopScores[i].Player)).ParsedResult.Username;
+                scores.Add(new()
                 {
-                    Scores.scoreList.Add(new()
-                    {
-                        walletAddress = sheet.columns["Wallet Address"][i].value,
-                        playerName = sheet.columns["Username"][i].value,
-                        levelDescription = sheet.columns["Level"][i].value,
-                        playerScore = long.Parse(sheet.columns["Score"][i].value),
-                        level = long.Parse(sheet.columns["LevelIndex"][i].value)
-                    });
-                }
-
-                Scores.scoreList = Scores.scoreList.OrderBy(x => x.playerScore).ToList();
-                Scores.scoreList.Reverse();
-                result(true);
+                    username = username,
+                    score = topEntries.ParsedResult.TopScores[i].Entry.Score
+                });
             }
-        });
+        }
+
+        result(true);
     }
 }

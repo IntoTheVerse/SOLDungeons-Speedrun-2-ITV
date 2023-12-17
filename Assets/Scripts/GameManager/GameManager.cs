@@ -1,8 +1,8 @@
 using System.Collections;
 using System.Collections.Generic;
-using DapperLabs.Flow.Sdk;
-using DapperLabs.Flow.Sdk.Cadence;
+using Solana.Unity.SDK;
 using TMPro;
+using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
@@ -627,7 +627,6 @@ public class GameManager : SingletonMonobehaviour<GameManager>
 
     }
 
-
     /// <summary>
     /// Game Won
     /// </summary>
@@ -638,7 +637,7 @@ public class GameManager : SingletonMonobehaviour<GameManager>
         // Disable player
         GetPlayer().playerControl.DisablePlayer();
 
-        HighScoreManager.Instance.AddScore(new Score() { walletAddress = WalletManager.instance.flowAccount.Address, playerName = GameResources.Instance.currentPlayer.playerName, levelDescription = "LEVEL " + (currentDungeonLevelListIndex + 1).ToString() + " - " + GetCurrentDungeonLevel().levelName.ToUpper(), playerScore = gameScore,  level = currentDungeonLevelListIndex});
+        HighScoreManager.Instance.AddScore((ulong)gameScore);
 
         // Wait 1 seconds
         yield return new WaitForSeconds(1f);
@@ -651,21 +650,7 @@ public class GameManager : SingletonMonobehaviour<GameManager>
 
         if (tokenToAdd > 0)
         {
-            var txResponse = Transactions.SubmitAndWaitUntilSealed
-            (
-                Cadence.instance.transferToken.text,
-                Convert.ToCadence(WalletManager.instance.flowAccount.Address, "Address"),
-                Convert.ToCadence(tokenToAdd, "UFix64")
-            );
-            InfoDisplay.Instance.ShowInfo("Sign Transaction", "Please sign the token transfer trasaction from your wallet!");
-            yield return new WaitUntil(() => txResponse.IsCompleted);
-            InfoDisplay.Instance.HideInfo();
-            var txResult = txResponse.Result;
-            if (txResult.Error != null) Cadence.instance.DebugFlowErrors(txResult.Error);
-            else
-            {
-                Debug.Log($"Transaction Completion Code: {txResult.StatusCode}");
-            }
+            WalletManager.instance.RecieveToken(WalletManager.instance.dunMint, (int)tokenToAdd).Yield();
         }
         
         yield return StartCoroutine(DisplayMessageRoutine("PRESS RETURN TO RESTART THE GAME", Color.white, 0f));
@@ -685,8 +670,8 @@ public class GameManager : SingletonMonobehaviour<GameManager>
         // Disable player
         GetPlayer().playerControl.DisablePlayer();
 
-        HighScoreManager.Instance.AddScore(new Score() { walletAddress = WalletManager.instance.flowAccount.Address, playerName = GameResources.Instance.currentPlayer.playerName, levelDescription = "LEVEL " + (currentDungeonLevelListIndex + 1).ToString() + " - " + GetCurrentDungeonLevel().levelName.ToUpper(), playerScore = gameScore, level = currentDungeonLevelListIndex });
-
+        HighScoreManager.Instance.AddScore((ulong)gameScore);
+        
         // Wait 1 seconds
         yield return new WaitForSeconds(1f);
 
@@ -705,21 +690,7 @@ public class GameManager : SingletonMonobehaviour<GameManager>
 
         if (tokenToAdd > 0)
         {
-            var txResponse = Transactions.SubmitAndWaitUntilSealed
-            (
-                Cadence.instance.transferToken.text,
-                Convert.ToCadence(WalletManager.instance.flowAccount.Address, "Address"),
-                Convert.ToCadence(tokenToAdd, "UFix64")
-            );
-            InfoDisplay.Instance.ShowInfo("Sign Transaction", "Please sign the token transfer trasaction from your wallet!");
-            yield return new WaitUntil(() => txResponse.IsCompleted);
-            InfoDisplay.Instance.HideInfo();
-            var txResult = txResponse.Result;
-            if (txResult.Error != null) Cadence.instance.DebugFlowErrors(txResult.Error);
-            else
-            {
-                Debug.Log($"Transaction Completion Code: {txResult.StatusCode}");
-            }
+            WalletManager.instance.RecieveToken(WalletManager.instance.dunMint, (int)tokenToAdd).Yield();
         }
 
         yield return StartCoroutine(DisplayMessageRoutine("PRESS RETURN TO RESTART THE GAME", Color.white, 0f));

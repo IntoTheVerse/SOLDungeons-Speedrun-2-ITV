@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
-using DapperLabs.Flow.Sdk.Cadence;
-using DapperLabs.Flow.Sdk;
+using Solana.Unity.Rpc.Models;
+using SolDungeons.Program;
+using Solana.Unity.Programs;
+using Solana.Unity.Rpc.Core.Http;
 
 [DisallowMultipleComponent]
 public class CharacterSelectorUI : MonoBehaviour
@@ -133,7 +135,7 @@ public class CharacterSelectorUI : MonoBehaviour
     {
         playerNameInput.text = playerNameInput.text.ToUpper();
 
-        if (FlowSDK.GetWalletProvider().IsAuthenticated())
+        if (WalletManager.instance.playerPDA != null)
         {
             applyButton.interactable = true;
             cancelButton.interactable = true;
@@ -144,48 +146,50 @@ public class CharacterSelectorUI : MonoBehaviour
 
     public void OnApplyUsername()
     {
-        StartCoroutine(UpdateUsername());
+        UpdateUsername();
     }
 
-    private IEnumerator UpdateUsername()
+    private async void UpdateUsername()
     {
         applyButton.interactable = false;
         cancelButton.interactable = false;
-        var txResponse = Transactions.SubmitAndWaitUntilSealed(
-            Cadence.instance.updateUserName.text,
-            Convert.ToCadence(playerNameInput.text, "String") 
-        );
-        InfoDisplay.Instance.ShowInfo("Sign Transaction", "Please sign the change username trasaction from your wallet!");
-        yield return new WaitUntil(() => txResponse.IsCompleted);
-        InfoDisplay.Instance.HideInfo();
-        var txResult = txResponse.Result;
-
-        if (txResult.Error != null)
+        InfoDisplay.Instance.ShowInfo("Processing", "Updating username!");
+        var tx = new Transaction()
         {
-            Cadence.instance.DebugFlowErrors(txResult.Error);
+            FeePayer = WalletManager.instance.sessionWallet.Account,
+            Instructions = new List<TransactionInstruction>(),
+            RecentBlockHash = (await WalletManager.instance.rpcClient.GetLatestBlockHashAsync()).Result.Value.Blockhash
+        };
+
+        var userAccounts = new UpdateUsernameAccounts()
+        {
+            Signer = WalletManager.instance.sessionWallet.Account,
+            User = WalletManager.instance.playerPDA,
+            SessionToken = WalletManager.instance.sessionWallet.SessionTokenPDA,
+            SystemProgram = SystemProgram.ProgramIdKey
+        };
+
+        var userIx = SolDungeonsProgram.UpdateUsername(
+            accounts: userAccounts,
+            username: playerNameInput.text,
+            WalletManager.instance.programId
+        );
+
+        tx.Add(userIx);
+
+        RequestResult<string> resTx = await WalletManager.instance.sessionWallet.SignAndSendTransaction(tx);
+        Debug.Log($"Result: {Newtonsoft.Json.JsonConvert.SerializeObject(resTx)}");
+
+        if (!resTx.WasSuccessful || !resTx.WasHttpRequestSuccessful || !resTx.WasRequestSuccessfullyHandled)
+        {
             playerNameInput.text = currentPlayer.playerName;
         }
         else
         {
-            var scpRespone = WalletManager.instance.scriptsExecutionAccount.ExecuteScript
-            (
-                Cadence.instance.getUserName.text,
-                Convert.ToCadence(WalletManager.instance.flowAccount.Address, "Address")
-            );
-            yield return new WaitUntil(() => scpRespone.IsCompleted);
-            var scpResult = scpRespone.Result;
-            if (scpResult.Error != null)
-            {
-                Cadence.instance.DebugFlowErrors(txResult.Error);
-                playerNameInput.text = currentPlayer.playerName;
-            }
-            else
-            {
-                string recievedResult = Convert.FromCadence<string>(scpResult.Value);
-                playerNameInput.text = recievedResult;
-                currentPlayer.playerName = recievedResult;
-            }
+            currentPlayer.playerName = playerNameInput.text;
         }
+
+        InfoDisplay.Instance.HideInfo();
         applyButton.gameObject.SetActive(false);
         cancelButton.gameObject.SetActive(false);
     }
