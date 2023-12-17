@@ -3,10 +3,19 @@ Built at: Solana Speedrun 2 </br>
 Smart contracts can be found at: [Speedrun-2-SmartContracts-SOLDungeons](https://github.com/IntoTheVerse/Speedrun-2-SmartContracts)
 <img width="150" alt="Screenshot 2023-11-16 at 8 32 00 AM" src="https://github.com/IntoTheVerse/SOLDungeons-Speedrun-2-ITV/assets/43913734/37b98bad-6b04-4ac5-be8b-fe6e243edcc3">
 
+## Qualifying Tracks 
+**Main Tracks**
+- Best fully on-chain game (1st, 2nd & 3rd place)
+- Best Solana-integrated game
+
+**Sponsored tracks**
+- Magicblock
+- Metaplex
+
 <h1 align="center">SOLDungeons</h1>
 Built on Solana - SOLDungeons is an on-chain dungeon raider and marketplace - Death is TEMPORARY
 <p align="center">
-  <a href="">
+  <a href="https://youtu.be/dQ17_AVCh7Y">
   Click to view demo on Youtube
   </a>
     <img src="https://github.com/IntoTheVerse/SOLDungeons-Speedrun-2-ITV/assets/43913734/3d76b8b0-de92-4a9a-970c-5ab24c8e05af" alt="Logo" >
