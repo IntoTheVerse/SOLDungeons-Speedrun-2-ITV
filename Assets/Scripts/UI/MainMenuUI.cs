@@ -12,6 +12,7 @@ using Solana.Unity.Rpc.Types;
 using Cysharp.Threading.Tasks;
 using SolDungeons.Program;
 using SolDungeons;
+using System.Text;
 
 [System.Serializable]
 public struct NFTMetadatas
@@ -62,14 +63,23 @@ public class MainMenuUI : MonoBehaviour
     {
         MusicManager.Instance.PlayMusic(GameResources.Instance.mainMenuMusic, 0f, 2f);
         returnToMainMenuButton.SetActive(false);
+        if (WalletManager.instance.playerPDA != null) Login();
     }
 
     /// <summary>
     /// Called from the Play Game / Enter The Dungeon Button
     /// </summary>
-    public void PlayGame()
+    public async void PlayGame()
     {
-        SceneManager.LoadScene("MainGameScene");
+        var client = new SolDungeonsClient(Web3.Rpc, Web3.WsRpc, WalletManager.instance.programId);
+        var res = await client.GetUserAsync(WalletManager.instance.playerPDA);
+        PublicKey.TryFindProgramAddress(new[]{
+            Encoding.UTF8.GetBytes(res.ParsedResult.CurrentCharacterId.ToString()),
+            Web3.Account.PublicKey.KeyBytes
+        }, WalletManager.instance.programId, out PublicKey playerCharacterPDA, out var _);
+        var resAcc = await client.GetUserCharacterAsync(playerCharacterPDA);
+        if (resAcc.ParsedResult.Locked) InfoDisplay.Instance.ShowInfo("Info", "Sorry! The currently selected player is locked");
+        else SceneManager.LoadScene("MainGameScene");
     }
 
     public void OnEnable()
@@ -89,7 +99,12 @@ public class MainMenuUI : MonoBehaviour
         
     }
 
-    private async void OnLogin(Account account)
+    private void OnLogin(Account account)
+    {
+        Login();
+    }
+
+    private async void Login()
     {
         await WalletManager.instance.GetPDAs();
         SetupPlayer();
@@ -180,6 +195,8 @@ public class MainMenuUI : MonoBehaviour
 
         await WalletManager.instance.RecieveToken(WalletManager.instance.metadatas.charactersMetadata[0].publicKey, 1);
         await WalletManager.instance.RecieveToken(WalletManager.instance.metadatas.weaponsMetadata[0].publicKey, 1);
+        await WalletManager.instance.AssignPlayerCharacter(new PublicKey(WalletManager.instance.metadatas.charactersMetadata[0].publicKey));
+
         SetupPlayer();
     }
 

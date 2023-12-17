@@ -30,7 +30,7 @@ namespace SolDungeons
 
             public string Username { get; set; }
 
-            public string CurrentCharacter { get; set; }
+            public byte CurrentCharacterId { get; set; }
 
             public static User Deserialize(ReadOnlySpan<byte> _data)
             {
@@ -47,8 +47,8 @@ namespace SolDungeons
                 offset += 32;
                 offset += _data.GetBorshString(offset, out var resultUsername);
                 result.Username = resultUsername;
-                offset += _data.GetBorshString(offset, out var resultCurrentCharacter);
-                result.CurrentCharacter = resultCurrentCharacter;
+                result.CurrentCharacterId = _data.GetU8(offset);
+                offset += 1;
                 return result;
             }
         }
@@ -58,7 +58,7 @@ namespace SolDungeons
             public static ulong ACCOUNT_DISCRIMINATOR => 6663967752651742160UL;
             public static ReadOnlySpan<byte> ACCOUNT_DISCRIMINATOR_BYTES => new byte[] { 208, 27, 119, 35, 93, 43, 123, 92 };
             public static string ACCOUNT_DISCRIMINATOR_B58 => "bouHCPMrFuu";
-            public string Mint { get; set; }
+            public byte MintId { get; set; }
 
             public bool Locked { get; set; }
 
@@ -75,8 +75,8 @@ namespace SolDungeons
                 }
 
                 UserCharacter result = new UserCharacter();
-                offset += _data.GetBorshString(offset, out var resultMint);
-                result.Mint = resultMint;
+                result.MintId = _data.GetU8(offset);
+                offset += 1;
                 result.Locked = _data.GetBool(offset);
                 offset += 1;
                 result.LastLockedTime = _data.GetU64(offset);
@@ -176,9 +176,9 @@ namespace SolDungeons
             return await SignAndSendTransaction(instr, feePayer, signingCallback);
         }
 
-        public async Task<RequestResult<string>> SendAssignPlayerCharacterAsync(AssignPlayerCharacterAccounts accounts, string characterMint, PublicKey feePayer, Func<byte[], PublicKey, byte[]> signingCallback, PublicKey programId)
+        public async Task<RequestResult<string>> SendAssignPlayerCharacterAsync(AssignPlayerCharacterAccounts accounts, byte characterMintId, PublicKey feePayer, Func<byte[], PublicKey, byte[]> signingCallback, PublicKey programId)
         {
-            Solana.Unity.Rpc.Models.TransactionInstruction instr = Program.SolDungeonsProgram.AssignPlayerCharacter(accounts, characterMint, programId);
+            Solana.Unity.Rpc.Models.TransactionInstruction instr = Program.SolDungeonsProgram.AssignPlayerCharacter(accounts, characterMintId, programId);
             return await SignAndSendTransaction(instr, feePayer, signingCallback);
         }
 
@@ -332,7 +332,7 @@ namespace SolDungeons
                 return new Solana.Unity.Rpc.Models.TransactionInstruction { Keys = keys, ProgramId = programId.KeyBytes, Data = resultData };
             }
 
-            public static Solana.Unity.Rpc.Models.TransactionInstruction AssignPlayerCharacter(AssignPlayerCharacterAccounts accounts, string characterMint, PublicKey programId)
+            public static Solana.Unity.Rpc.Models.TransactionInstruction AssignPlayerCharacter(AssignPlayerCharacterAccounts accounts, byte characterMintId, PublicKey programId)
             {
                 List<Solana.Unity.Rpc.Models.AccountMeta> keys = new()
                 {Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Signer, true), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.User, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.UserCharacter, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SessionToken == null ? programId : accounts.SessionToken, false), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SystemProgram, false)};
@@ -340,7 +340,8 @@ namespace SolDungeons
                 int offset = 0;
                 _data.WriteU64(18030146948214668928UL, offset);
                 offset += 8;
-                offset += _data.WriteBorshString(characterMint, offset);
+                _data.WriteU8(characterMintId, offset);
+                offset += 1;
                 byte[] resultData = new byte[offset];
                 Array.Copy(_data, resultData, offset);
                 return new Solana.Unity.Rpc.Models.TransactionInstruction { Keys = keys, ProgramId = programId.KeyBytes, Data = resultData };

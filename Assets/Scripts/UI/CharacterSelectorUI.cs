@@ -7,6 +7,8 @@ using Solana.Unity.Rpc.Models;
 using SolDungeons.Program;
 using Solana.Unity.Programs;
 using Solana.Unity.Rpc.Core.Http;
+using Solana.Unity.Soar.Program;
+using Solana.Unity.SDK;
 
 [DisallowMultipleComponent]
 public class CharacterSelectorUI : MonoBehaviour
@@ -186,7 +188,39 @@ public class CharacterSelectorUI : MonoBehaviour
         }
         else
         {
-            currentPlayer.playerName = playerNameInput.text;
+            Transaction soarTx = new()
+            {
+                FeePayer = Web3.Account,
+                Instructions = new List<TransactionInstruction>(),
+                RecentBlockHash = (await WalletManager.instance.rpcClient.GetLatestBlockHashAsync()).Result.Value.Blockhash
+            };
+
+            var accounts = new UpdatePlayerAccounts()
+            {
+                User = Web3.Account,
+                PlayerAccount = WalletManager.instance.playerSoarPDA,
+            };
+
+            var updatePlayerIx = SoarProgram.UpdatePlayer(
+                accounts: accounts,
+                username: playerNameInput.text,
+                nftMeta: Web3.Account.PublicKey,
+                SoarProgram.ProgramIdKey
+            );
+
+            soarTx.Add(updatePlayerIx);
+
+            RequestResult<string> resSoarTx = await Web3.Wallet.SignAndSendTransaction(soarTx);
+            Debug.Log($"Result: {Newtonsoft.Json.JsonConvert.SerializeObject(resSoarTx)}");
+
+            if (!resSoarTx.WasSuccessful || !resSoarTx.WasHttpRequestSuccessful || !resSoarTx.WasRequestSuccessfullyHandled)
+            {
+                playerNameInput.text = currentPlayer.playerName;
+            }
+            else
+            {
+                currentPlayer.playerName = playerNameInput.text;
+            }
         }
 
         InfoDisplay.Instance.HideInfo();

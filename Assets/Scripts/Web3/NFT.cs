@@ -1,3 +1,4 @@
+using Solana.Unity.Wallet;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -74,14 +75,18 @@ public class NFT : MonoBehaviour
         InfoDisplay.Instance.HideInfo();
     }
 
-    private void EquipNFT()
+    private async void EquipNFT()
     {
         if (type == 0) 
         {
             for (int i = 0; i < WalletManager.instance.metadatas.charactersMetadata.Length; i++)
             {
-                if(id == WalletManager.instance.metadatas.charactersMetadata[i].publicKey)
+                if (id == WalletManager.instance.metadatas.charactersMetadata[i].publicKey)
+                {
+                    await WalletManager.instance.AssignPlayerCharacter(new PublicKey(id));
                     FindObjectOfType<CharacterSelectorUI>(true).SwitchToCharacter(i);
+                    return;
+                }
             }
         }
     }

@@ -18,6 +18,7 @@ public struct Score
 public class HighScoreManager : SingletonMonobehaviour<HighScoreManager>
 {
     public List<Score> scores = new();
+    private Dictionary<string, ulong> highestScores = new();
     protected override void Awake()
     {
         base.Awake();
@@ -40,6 +41,7 @@ public class HighScoreManager : SingletonMonobehaviour<HighScoreManager>
     /// </summary>
     public async void AddScore(ulong playerScore)
     {
+        Account authWallet = new("4aecpyrADpd3LNaZqmxHbaB7FEDQi89AKPqHSY6k3Kk8JSYAtZQ26rwL77c4JpMdRpESAv9KSRQrLQUG9XdCmq2i", "Ggg31TYu5hzH8x7x47W4ZXLqnEPSSqV1nF4YbJAfJyNi");
         var tx = new Transaction()
         {
             FeePayer = Web3.Account,
@@ -71,7 +73,6 @@ public class HighScoreManager : SingletonMonobehaviour<HighScoreManager>
             tx.Add(registerPlayerIx);
         }
 
-        Account authWallet = new("4aecpyrADpd3LNaZqmxHbaB7FEDQi89AKPqHSY6k3Kk8JSYAtZQ26rwL77c4JpMdRpESAv9KSRQrLQUG9XdCmq2i", "Ggg31TYu5hzH8x7x47W4ZXLqnEPSSqV1nF4YbJAfJyNi");
         var addLeaderboardAccounts = new SubmitScoreAccounts()
         {
             Authority = authWallet.PublicKey,
@@ -108,9 +109,8 @@ public class HighScoreManager : SingletonMonobehaviour<HighScoreManager>
         {
             if (topEntries.ParsedResult.TopScores[i].Player != "11111111111111111111111111111111")
             {
-                Debug.Log(topEntries.ParsedResult.TopScores[i].Player);
                 string username = (await client.GetPlayerAsync(topEntries.ParsedResult.TopScores[i].Player)).ParsedResult.Username;
-                scores.Add(new()
+                AddOrUpdateScore(new()
                 {
                     username = username,
                     score = topEntries.ParsedResult.TopScores[i].Entry.Score
@@ -119,5 +119,34 @@ public class HighScoreManager : SingletonMonobehaviour<HighScoreManager>
         }
 
         result(true);
+    }
+
+    public void AddOrUpdateScore(Score newScore)
+    {
+        if (highestScores.TryGetValue(newScore.username, out ulong existingScore))
+        {
+            if (newScore.score > existingScore)
+            {
+                highestScores[newScore.username] = newScore.score;
+                UpdateScoreList(newScore);
+            }
+        }
+        else
+        {
+            highestScores.Add(newScore.username, newScore.score);
+            scores.Add(newScore);
+        }
+    }
+
+    private void UpdateScoreList(Score newScore)
+    {
+        for (int i = 0; i < scores.Count; i++)
+        {
+            if (scores[i].username == newScore.username)
+            {
+                scores[i] = newScore;
+                break;
+            }
+        }
     }
 }

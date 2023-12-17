@@ -122,7 +122,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 2936276756521162843, guid: 50aee902b80902947ba13e1052ab8efa, type: 3}
       propertyPath: tokenSpawnByLevelList.Array.data[0].min
-      value: 100
+      value: 40
       objectReference: {fileID: 0}
     - target: {fileID: 2936276756521162843, guid: 50aee902b80902947ba13e1052ab8efa, type: 3}
       propertyPath: healthSpawnByLevelList.Array.data[0].max

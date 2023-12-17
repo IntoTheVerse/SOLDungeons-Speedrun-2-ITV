@@ -57,6 +57,10 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 6839687933860854480, guid: f9f2d4b81232e9149a1fe923858a4ee2, type: 3}
+      propertyPath: tokenSpawnByLevelList.Array.data[0].min
+      value: 40
+      objectReference: {fileID: 0}
+    - target: {fileID: 6839687933860854480, guid: f9f2d4b81232e9149a1fe923858a4ee2, type: 3}
       propertyPath: weaponSpawnByLevelList.Array.data[0].spawnableObjectRatioList.Array.size
       value: 3
       objectReference: {fileID: 0}

@@ -14,6 +14,8 @@ using Solana.Unity.Programs;
 using SolDungeons.Program;
 using Solana.Unity.Rpc.Core.Http;
 using Cysharp.Threading.Tasks;
+using System.Buffers.Binary;
+using SolDungeons;
 
 [Serializable]
 public struct NFTDatas
@@ -196,5 +198,87 @@ public class WalletManager : MonoBehaviour
 
         RequestResult<string> res = await sessionWallet.SignAndSendTransaction(tx);
         Debug.Log($"Result: {Newtonsoft.Json.JsonConvert.SerializeObject(res)}");
+    }
+
+    public async Task AssignPlayerCharacter(PublicKey characterMint)
+    {
+        Transaction assignPlayerTx = new()
+        {
+            FeePayer = sessionWallet.Account,
+            Instructions = new List<TransactionInstruction>(),
+            RecentBlockHash = (await rpcClient.GetLatestBlockHashAsync()).Result.Value.Blockhash
+        };
+
+        int id = 0;
+        for (int i = 0; i < metadatas.charactersMetadata.Length; i++)
+        {
+            if (metadatas.charactersMetadata[i].publicKey == characterMint)
+            {
+                id = i;
+                break;
+            }
+        }
+
+        PublicKey.TryFindProgramAddress(new[]{
+            Encoding.UTF8.GetBytes(id.ToString()),
+            Web3.Account.PublicKey.KeyBytes
+        }, programId, out PublicKey playerCharacterPDA, out var _);
+
+        var accountsAssignCharacter = new AssignPlayerCharacterAccounts()
+        {
+            Signer = sessionWallet.Account.PublicKey,
+            User = playerPDA,
+            UserCharacter = playerCharacterPDA,
+            SessionToken = sessionWallet.SessionTokenPDA,
+            SystemProgram = SystemProgram.ProgramIdKey
+        };
+
+        var playerCharacterIx = SolDungeonsProgram.AssignPlayerCharacter(
+            accountsAssignCharacter,
+            (byte)id,
+            programId
+        );
+
+        assignPlayerTx.Add(playerCharacterIx);
+
+        RequestResult<string> resTx = await sessionWallet.SignAndSendTransaction(assignPlayerTx);
+        Debug.Log($"Result: {Newtonsoft.Json.JsonConvert.SerializeObject(resTx)}");
+    }
+
+    public async Task LockCurrentPlayerCharacter()
+    {
+        Transaction assignPlayerTx = new()
+        {
+            FeePayer = sessionWallet.Account,
+            Instructions = new List<TransactionInstruction>(),
+            RecentBlockHash = (await rpcClient.GetLatestBlockHashAsync()).Result.Value.Blockhash
+        };
+
+        var client = new SolDungeonsClient(Web3.Rpc, Web3.WsRpc, programId);
+        var res = await client.GetUserAsync(playerPDA);
+
+        PublicKey.TryFindProgramAddress(new[]{
+            Encoding.UTF8.GetBytes(res.ParsedResult.CurrentCharacterId.ToString()),
+            Web3.Account.PublicKey.KeyBytes
+        }, programId, out PublicKey playerCharacterPDA, out var _);
+
+        var accountsAssignCharacter = new LockCurrentUserCharacterAccounts()
+        {
+            Signer = sessionWallet.Account.PublicKey,
+            User = playerPDA,
+            UserCharacter = playerCharacterPDA,
+            SessionToken = sessionWallet.SessionTokenPDA,
+            SystemProgram = SystemProgram.ProgramIdKey
+        };
+
+        var playerCharacterIx = SolDungeonsProgram.LockCurrentUserCharacter(
+            accountsAssignCharacter,
+            programId
+        );
+
+        assignPlayerTx.Add(playerCharacterIx);
+
+        RequestResult<string> resTx = await sessionWallet.SignAndSendTransaction(assignPlayerTx);
+        Debug.Log($"Result: {Newtonsoft.Json.JsonConvert.SerializeObject(resTx)}");
     }
 }

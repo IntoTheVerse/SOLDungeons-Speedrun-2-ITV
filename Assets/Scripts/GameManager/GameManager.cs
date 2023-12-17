@@ -693,6 +693,8 @@ public class GameManager : SingletonMonobehaviour<GameManager>
             WalletManager.instance.RecieveToken(WalletManager.instance.dunMint, (int)tokenToAdd).Yield();
         }
 
+        WalletManager.instance.LockCurrentPlayerCharacter().Yield();
+
         yield return StartCoroutine(DisplayMessageRoutine("PRESS RETURN TO RESTART THE GAME", Color.white, 0f));
 
         // Set game state to restart game
