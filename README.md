@@ -1,5 +1,6 @@
 # SOLDungeons
 Built at: Solana Speedrun 2 </br>
+Smart contracts can be found at: [Speedrun-2-SmartContracts-SOLDungeons](https://github.com/IntoTheVerse/Speedrun-2-SmartContracts)
 <img width="150" alt="Screenshot 2023-11-16 at 8 32 00 AM" src="https://github.com/IntoTheVerse/SOLDungeons-Speedrun-2-ITV/assets/43913734/37b98bad-6b04-4ac5-be8b-fe6e243edcc3">
 
 <h1 align="center">SOLDungeons</h1>
